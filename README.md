@@ -61,3 +61,20 @@ The response includes a retrieved answer, source citations, retrieval evidence, 
 ## Current Limitation
 
 This version retrieves relevant source passages rather than generating new answers with an LLM. Retrieval quality depends on the available documents and query wording.
+
+## Evaluation Results
+
+| Test question | Result | Evidence |
+|---|---|---|
+| What safety precautions are mentioned in the hydro safety brief? | Passed | Retrieved the hydro safety paragraph with its source citation |
+| What should be checked during solar inverter maintenance? | Partially passed | Retrieved the correct solar inverter passage, but also returned unrelated wind turbine passages |
+
+Both test requests returned HTTP 200.
+
+## Limitations
+
+- Uses TF-IDF and cosine similarity for retrieval.
+- Returns retrieved source passages rather than generating answers with an LLM.
+- Retrieval may include unrelated passages.
+- No comprehensive evaluation dataset or accuracy benchmark has been established.
+- Railway deployment must be verified separately.
