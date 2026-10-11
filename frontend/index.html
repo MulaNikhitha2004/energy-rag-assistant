@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Energy Operations RAG Assistant</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f6f4;
+      color: #1d3027;
+    }
+    header {
+      background: #12372a;
+      color: white;
+      padding: 28px 20px;
+    }
+    header p { color: #d5e5da; }
+    main {
+      max-width: 900px;
+      margin: 28px auto;
+      padding: 0 16px;
+    }
+    .card {
+      background: white;
+      padding: 22px;
+      border-radius: 12px;
+      margin-bottom: 18px;
+      box-shadow: 0 3px 12px #0000000c;
+    }
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 12px;
+      border: 1px solid #cbd5ce;
+      border-radius: 8px;
+      font: inherit;
+      resize: vertical;
+    }
+    button {
+      background: #176b45;
+      color: white;
+      padding: 12px 18px;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    button:disabled { opacity: 0.6; }
+    .source {
+      border-left: 4px solid #176b45;
+      background: #f5f8f6;
+      padding: 12px;
+      margin: 12px 0;
+      overflow-wrap: anywhere;
+    }
+    .muted { color: #627168; font-size: 14px; }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: inherit;
+    }
+    .status { margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Energy Operations RAG Assistant</h1>
+    <p>Ask questions about energy operations, safety and maintenance documents.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Ask a question</h2>
+      <form id="questionForm">
+        <textarea id="question"
+          placeholder="Example: What should be checked for inverter derating?"
+          required maxlength="1000"></textarea>
+        <button id="askButton" type="submit">Search documents</button>
+      </form>
+      <p class="muted">
+        Answers are based on the bundled documents, not live plant data.
+      </p>
+      <div id="status" class="status" role="status"></div>
+    </section>
+
+    <section class="card" id="answerCard" hidden>
+      <h2>Answer</h2>
+      <pre id="answer"></pre>
+      <p id="check" class="muted"></p>
+    </section>
+
+    <section class="card" id="evidenceCard" hidden>
+      <h2>Retrieved evidence and citations</h2>
+      <div id="evidence"></div>
+    </section>
+
+    <section class="card">
+      <h2>System status</h2>
+      <p id="health">Checking backend...</p>
+      <button id="evaluateButton" type="button">Run retrieval evaluation</button>
+      <pre id="evaluation"></pre>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("questionForm");
+    const question = document.getElementById("question");
+    const askButton = document.getElementById("askButton");
+    const status = document.getElementById("status");
+    const answerCard = document.getElementById("answerCard");
+    const evidenceCard = document.getElementById("evidenceCard");
+
+    async function loadHealth() {
+      const output = document.getElementById("health");
+
+      try {
+        const response = await fetch("/api/health");
+        if (!response.ok) throw new Error("Backend request failed");
+
+        const data = await response.json();
+        output.textContent =
+          `Backend online. Documents: ${data.documents_loaded}; ` +
+          `chunks: ${data.chunks_loaded}.`;
+      } catch (error) {
+        output.textContent =
+          "Backend unavailable. Start the FastAPI server and refresh.";
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const text = question.value.trim();
+      if (!text) return;
+
+      askButton.disabled = true;
+      status.textContent = "Searching documents...";
+      answerCard.hidden = true;
+      evidenceCard.hidden = true;
+
+      try {
+        const response = await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Unable to process question");
+        }
+
+        document.getElementById("answer").textContent = data.answer;
+        document.getElementById("check").textContent =
+          "Evidence check: " + data.hallucination_check.status +
+          (data.abstained ? " — insufficient evidence." : "");
+
+        answerCard.hidden = false;
+
+        const evidence = document.getElementById("evidence");
+        evidence.replaceChildren();
+
+        if (!data.evidence || data.evidence.length === 0) {
+          evidence.textContent = "No document evidence was retrieved.";
+        } else {
+          data.evidence.forEach((item) => {
+            const block = document.createElement("div");
+            block.className = "source";
+
+            const heading = document.createElement("strong");
+            heading.textContent =
+              `${item.source} | ${item.chunk_id} | Score: ${item.score}`;
+
+            const text = document.createElement("p");
+            text.textContent = item.text;
+
+            block.append(heading, text);
+            evidence.appendChild(block);
+          });
+        }
+
+        evidenceCard.hidden = false;
+        status.textContent = "Search completed.";
+      } catch (error) {
+        status.textContent = "Error: " + error.message;
+      } finally {
+        askButton.disabled = false;
+      }
+    });
+
+    document.getElementById("evaluateButton")
+      .addEventListener("click", async () => {
+        const output = document.getElementById("evaluation");
+        output.textContent = "Running evaluation...";
+
+        try {
+          const response = await fetch("/api/evaluate");
+          const data = await response.json();
+          if (!response.ok) throw new Error("Evaluation failed");
+
+          output.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+          output.textContent = error.message;
+        }
+      });
+
+    loadHealth();
+  </script>
+</body>
+</html>
